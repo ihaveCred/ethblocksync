@@ -1,0 +1,7 @@
+/.idea
+/build
+/node_modules
+/obj
+/bin
+*.njsproj
+*.log
