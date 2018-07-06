@@ -6,7 +6,7 @@ let fs = require('fs');
 let httpRequest = require('request');
 
 //https://kovan.infura.io/KcDF0o40KSkWOFVLyDkW;
-const nodeUrl = 'https://mainnet.infura.io/FNKpcXdW3Dgou3VgYI7d';
+const nodeUrl = 'https://mainnet.infura.io/t8uUMLXGPzZAlxOD0SxS';
 var etherscan_receipt_url = 'https://api.etherscan.io/api?module=transaction&action=getstatus&apikey=QFC9TZMKP9RK9ED9ZBF5UB9VY34BP714ZA&txhash=';
 
 var nodeUrlArray = ['https://mainnet.infura.io/FNKpcXdW3Dgou3VgYI7d', 'https://mainnet.infura.io/KcDF0o40KSkWOFVLyDkW', 'https://mainnet.infura.io/3UFqZPgWdUOVNqXYXPEK', 'https://mainnet.infura.io/t8uUMLXGPzZAlxOD0SxS'];
