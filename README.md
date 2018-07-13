@@ -10,4 +10,5 @@ From the above instructions you will get 10 txt files：block-2800000-2810000.tx
 
 ## 3 batchFix.js
 batchFix.js is used to repair problematic data,such as false data caused by false recharge vulnerabilities. All data files that need to be repaired should be stored in the './finished' folder. All repaired files are in the './fixed' folder and file name remains unchanged.The names of all the files that have been repaired are saved in the fixed.txt file. No duplicate repairs after the program restarts.
+     
      node batchFix.js
