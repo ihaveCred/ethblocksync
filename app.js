@@ -6,19 +6,23 @@ let fs = require('fs');
 let httpRequest = require('request');
 
 var baseService = require('./baseService');
-
+var schedule = require('node-schedule');
 
 
 
 var decimail_error_file = 'decimal_err.log';
+var event_decimail_error_file = 'event_decimal_err.log';
 var [provider, web3] = baseService.createNewProvider();
 
 
 
-main();
+//main();
 //test();
-
-
+//schduleTask();
+if (require.main === module) {
+    main();
+    //schduleTask();
+}
 
 async function test() {
     //must load dictionary first
@@ -37,12 +41,13 @@ async function test() {
     }
 }
 
+//Start the task manually
 async function main() {
     //must load dictionary first
     await baseService.loadTokenContractDict('./addressInfo.txt');
-    let startBlock = 5955340;
+    let startBlock = 6075340;
     let total = 100000;
-    let blockStep = 100;
+    let blockStep = 10000;
     let arg = process.argv;
     if (arg.length > 2 && arg[2]) {
         startBlock = parseInt(arg[2]);
@@ -51,11 +56,36 @@ async function main() {
     decimail_error_file = 'decimal_error_' + startBlock + "_" + total + ".log";
     console.log('program will start at block:' + startBlock);
     for (let i = 0; i <1; i++){
-        batchRun(startBlock + i * total, total, blockStep,i);
+        batchRun(startBlock + i * total, total, blockStep,i,false);
     }
 }
 
-async function batchRun(startBlock, total,blockStep, thNumber) {
+//Start the task regularly every day
+async function schduleTask(cronRule) {
+    //must load dictionary first
+    await baseService.loadTokenContractDict('./addressInfo.txt');
+    console.log('==============Schedule Task Created !!!===================');
+    schedule.scheduleJob(cronRule, async function () {//
+        let recordArray = await baseService.loadTaskRecord('./taskrecord.txt');
+        let endBlock = await baseService.getBlockHeight();
+        let startBlock = endBlock - 10000;
+        if (recordArray.length > 0) {
+            startBlock = parseInt(recordArray.pop());
+        }
+        let begin = new Date().getTime();
+        console.log('schdule task will start: ' + startBlock + ' - ' + endBlock);
+
+        await batchRun(startBlock, endBlock - startBlock, 10000, 0,true);
+        await baseService.sleep(10);
+
+        baseService.logToFile(endBlock, './taskrecord.txt');
+        let end = new Date().getTime();
+        console.log('schdule task finish: ' + startBlock + ' - ' + endBlock + ', use time:' + (end - begin) / 1000 / 60 + ' min');
+    });
+    
+}
+
+async function batchRun(startBlock, total,blockStep, thNumber,isSchdule) {
     let begin = new Date().getTime();
     if (total < blockStep)
         blockStep = total
@@ -69,6 +99,10 @@ async function batchRun(startBlock, total,blockStep, thNumber) {
             curPage = i-1;
         }
         let logFileName = 'block-' + curPage + '-' + (curPage + blockStep) + '.txt';
+        if (isSchdule) {
+            let nowDate = new Date().toLocaleDateString();
+            logFileName = 'schdule-' + nowDate + '.txt';
+        }
         let sourceFileName = './source_data/source-' + curPage + '-' + (curPage + blockStep) + '.txt';
 
         let block = await baseService.getBlock(i);
@@ -122,7 +156,8 @@ async function processTransaction(txHash, failTimes,logFileName,threadNumber,blo
     let method_id = '';  
     try {
         let transaction = await baseService.getTransaction(txHash);
-        if (transaction){   
+        let receipt = await baseService.getTransactionReceipt(txHash);
+        if (transaction && receipt) {   
             txhash = transaction.hash;
             //'0xa9059cbb' =>transfer;  '0x23b872dd' => transferFrom
             if ((transaction.input.startsWith('0xa9059cbb') || transaction.input.startsWith('0x23b872dd')) && transaction.value ==0) {
@@ -148,7 +183,7 @@ async function processTransaction(txHash, failTimes,logFileName,threadNumber,blo
                 if (baseService.contractMap[contrac_add]) {
                     eth_token_type = baseService.contractMap[contrac_add];
                 }
-                let receipt = await baseService.getTransactionReceipt(txHash);
+                
                 
                 if (receipt.status != undefined) {
                     is_error = !receipt.status;
@@ -181,7 +216,7 @@ async function processTransaction(txHash, failTimes,logFileName,threadNumber,blo
                     method_id: method_id
                 };
                 baseService.logToFile(_.values(final_res).toString(), logFileName);
-            } else if (transaction.value > 0) {//eth tranfer trx
+            } else if (transaction.value > 0 ) {//eth tranfer trx
                 transaction_type = 'eth_trade';
                 let receipt = await baseService.getTransactionReceipt(txHash);
                 //if block number less than 43700000, receipt.status is undefined
@@ -212,14 +247,74 @@ async function processTransaction(txHash, failTimes,logFileName,threadNumber,blo
                 }
                 baseService.logToFile(_.values(final_res).toString(), logFileName);
             }
-            else {
+            else if (receipt.logs.length>0){
                 //console.log('input data is empty: ' + transaction.input+" ##############  "+txHash);
+                let logArray = receipt.logs;
+                for (let i = 0; i < logArray.length; i++) {
+                    let logItem = logArray[i];
+                    //if event is Transfer
+                    let transfer_sign = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+                    if (logItem.topics.length > 0 && logItem.topics[0] == transfer_sign) {
+                        is_error = !receipt.status;
+                        contrac_add = transaction.to;
+                        if (logItem.data.startsWith('0x')) {
+                            logItem.data = logItem.data.substring(2);
+                        }
+                        if (logItem.topics.length > 1) {
+                            from = web3.eth.abi.decodeParameter('address', logItem.topics[1]);
+                            to = web3.eth.abi.decodeParameter('address',logItem.topics[2]);
+                            amount = web3.eth.abi.decodeParameter('uint256',logItem.data);
+                        } else {//Erc-721 contract
+                            //from = web3.eth.abi.decodeParameter('address', logItem.data.substr(0, 64));
+                            //to = web3.eth.abi.decodeParameter('address', logItem.data.substr(64, 64)); 
+                            //amount = web3.eth.abi.decodeParameter('uint256', logItem.data.substr(128, 64));
+                            //jump
+                            continue;
+                        }
+                        
+                        let decimal = await baseService.getDecimal(contrac_add, txHash, event_decimail_error_file);
+                        amount = new BigNumber(amount).dividedBy(10 ** parseInt(decimal)).toString(10);
+                        if (amount == 'NaN') {
+                            continue;
+                        }
+                        if (baseService.contractMap[contrac_add]) {
+                            eth_token_type = baseService.contractMap[contrac_add];
+                        }
+                        transaction_type = 'inner_token_transfer';
+                        gas = receipt.gasUsed;
+                        
+                        txfee = new BigNumber(receipt.gasUsed).multipliedBy(new BigNumber(transaction.gasPrice).dividedBy(10 ** 18)).toNumber();
+                        let final_res = {
+                            is_error: is_error,
+                            from: from,
+                            to: to,
+                            contrac_add: contrac_add,
+                            amount: amount,
+                            eth_token_type: eth_token_type,
+                            time: block.timestamp,
+                            transaction_type: transaction_type,
+                            txhash: txhash,
+                            txfee: txfee,
+                            gas: gas,
+                            block: transaction.blockNumber,
+                            method_id: transfer_sign
+                        };
+                        baseService.logToFile(_.values(final_res).toString(), logFileName);
+                    }
+                }
             }
         }
     } catch (e) {
+        if (e.message.indexOf("decode uint256 from") > 0) {
+            console.log("Couldn't decode uint256 from...return : " + txHash);
+            return;
+        }
         let s = Math.floor(Math.random() * 5 + 1) + 3;//4 ~ 9
         console.error(threadNumber+"#"+failTimes + '---Get this tx info error ,sleep:'+s+"    "+ txHash,e);
         await baseService.sleep(s);
         await processTransaction(txHash, failTimes + 1, logFileName, threadNumber);
     }
 }
+
+
+exports.schduleTask = schduleTask;

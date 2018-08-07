@@ -23,6 +23,7 @@ exports.getDecimal = getDecimal;
 exports.logToFile = logToFile;
 exports.getBlockHeight = getBlockHeight;
 exports.getBlock = getBlock;
+exports.loadTaskRecord = loadTaskRecord;
 
 
 
@@ -121,7 +122,7 @@ async function loadTokenContractDict(filePath) {
                 contractMap[columns[1].trim()] = columns[0].trim();
             });
             objReadline.on('close', () => {
-                console.log('---------------   finish loading  -----------------' + _.keys(contractMap).length);
+                console.log('---------------   finish loading contract dic -----------------' + _.keys(contractMap).length);
                 resolve(true);
             });
         } catch (err) {
@@ -131,6 +132,36 @@ async function loadTokenContractDict(filePath) {
     return result;
 }
 
+
+//load schdule task record.
+async function loadTaskRecord(filePath) {
+    let readline = require('readline');
+    let fs = require('fs');
+    let os = require('os');
+    let fReadName = filePath;
+    let recordArray = [];
+
+    let fRead = fs.createReadStream(fReadName);
+    let objReadline = readline.createInterface({
+        input: fRead,
+    });
+    let result = await new Promise((resolve, reject) => {
+        try {
+            objReadline.on('line', (line) => {
+                if (line.trim()!= ''){
+                    recordArray.push(line.trim());
+                }
+            });
+            objReadline.on('close', () => {
+                console.log('---------------   finish loading task record   -----------------' + _.keys(recordArray).length);
+                resolve(recordArray);
+            });
+        } catch (err) {
+            reject(err);
+        }
+    });
+    return result;
+}
 
 
 async function getTrxStatusFromEtherScan(txHash) {
@@ -226,6 +257,9 @@ async function getDecimal(contract_addr, tx_hash, decimail_error_file) {
             resolve('18');
         }
     });
+    if (dec_res == undefined) {
+        return '18';
+    }
     return dec_res;
 }
 

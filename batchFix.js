@@ -1,7 +1,7 @@
 ﻿let readlines = require('n-readlines');
 var fs = require("fs")
 var path = require("path")
-
+var BigNumber = require('bignumber.js');
 let baseService = require('./baseService');
 var [provider, web3] = baseService.createNewProvider();
 
@@ -21,11 +21,14 @@ async function fix(fileName,targetFileName) {
         let line;
         while (line = liner.next()) {
             let lineStr = line.toString('ascii');
-            check(lineStr, lineNumber, targetFileName);
+
+            //check(lineStr, lineNumber, targetFileName);
+            fixNaN(lineStr, lineNumber, targetFileName)
+
             lineNumber++;
             if (lineNumber % 1000 == 0) {
                 console.log('curLine:' + lineNumber);
-                await baseService.sleep(5);
+                await baseService.sleep(1);
             }
             
         }
@@ -37,6 +40,7 @@ async function fix(fileName,targetFileName) {
     
 }
 
+//Fixing  isError is not accurate  caused by the erc20 fake refill vulnerability
 async function check(lineStr,lineNumber,targetFile) {
     try {
         let columns = lineStr.split(',');
@@ -60,6 +64,40 @@ async function check(lineStr,lineNumber,targetFile) {
         baseService.logToFile(columns.toString(), targetFile);
     } catch (err) {
         console.log('error,jumped --- ' + txHash);
+    }
+}
+
+async function fixNaN(lineStr, lineNumber, targetFile) {
+    let txHash = "null";
+    try {
+        let columns = lineStr.split(',');
+        let eventType = columns[7];
+        let isError = columns[0];
+        txHash = columns[8];
+        let amount = columns[4];
+        let contrac_add = columns[3];
+        if (eventType == 'token_transfer' && amount == 'NaN') {
+            //console.log(columns);
+            let transaction = await baseService.getTransaction(txHash);
+            if (transaction.input.startsWith('0xa9059cbb')) {
+                let dataArr = baseService.getTransferParams(transaction.input);
+                amount = dataArr[2];
+            }//if method is transferFrom
+            else if (transaction.input.startsWith('0x23b872dd')) {
+                let dataArr = baseService.getTransferFromParams(transaction.input);
+                amount = dataArr[3];
+            }
+            let decimal = await baseService.getDecimal(contrac_add, txHash, 'fix_decimal_err.log');
+            amount = new BigNumber(amount).dividedBy(10 ** parseInt(decimal)).toString(10);
+            columns[4] = amount;
+            console.log('============== ' + lineNumber + ' modify txHash: ' + txHash);
+
+        } else {
+            //console.log('line is eth transfer: ' + lineNumber);
+        }
+        baseService.logToFile(columns.toString(), targetFile);
+    } catch (err) {
+        console.log('error,jumped --- ' + txHash,err);
     }
 }
 
@@ -114,24 +152,7 @@ async function runAll(path) {
     }
 
 
-    //pa.forEach(async function (fileName, index) {
-    //    var info = fs.statSync(path + "/" + fileName)
-    //    fileName = fileName.trim();
-    //    if (info.isDirectory()) {
-    //        console.log("dir: " + fileName)
-    //        //readDirSync(path + "/" + fileName); //no need recursive
-    //    } else {
-    //        //console.log("file: " + fileName)
-    //        if (dict[fileName]) {
-    //            console.log(fileName+'---  has been processed before');
-    //        } else {
-    //            console.log('fix will start: ' + needFixDir + fileName + ' --->' + fixDoneDir + fileName);
-    //            baseService.sleep(3)
-    //            await fix(needFixDir + fileName, fixDoneDir + fileName);
-    //            baseService.logToFile(fileName, fixFileNameCache);
-    //        }
-    //    }
-    //})
+   
 }
 
 function loadDoneDict(fileName) {
